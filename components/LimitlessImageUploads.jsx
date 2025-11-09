@@ -16,6 +16,9 @@ export default function LimitlessImageUploads() {
   const [webpFileName, setWebpFileName] = useState('');
   const [images, setImages] = useState([]);
   const [imagesVersion, setImagesVersion] = useState(0);
+  const [isFetchingImages, startImagesTransition] = useTransition();
+  const [imagesError, setImagesError] = useState(null);
+  const [showSlowImages, setShowSlowImages] = useState(false);
 
   const convertImageFileToWebp = (file, quality = 0.8) => {
     return new Promise((resolve, reject) => {
@@ -191,12 +194,33 @@ export default function LimitlessImageUploads() {
     }
   };
 
-  useEffect(() => {
-    getLimitlessImages().then((response) => {
-      console.log("response", response);
-      setImages(response.images);
+  const refetchImages = () => {
+    setImagesError(null);
+    startImagesTransition(() => {
+      getLimitlessImages()
+        .then((response) => {
+          setImages(response?.images || []);
+        })
+        .catch(() => {
+          setImagesError('Failed to load images.');
+        });
     });
+  };
+
+  useEffect(() => {
+    refetchImages();
   }, [imagesVersion]);
+
+  useEffect(() => {
+    if (!isFetchingImages) {
+      setShowSlowImages(false);
+      return;
+    }
+    const t = setTimeout(() => {
+      if (isFetchingImages) setShowSlowImages(true);
+    }, 600);
+    return () => clearTimeout(t);
+  }, [isFetchingImages]);
 
   return (
     <div className="min-h-screen bg-gray-50 py-8 px-4">
@@ -291,21 +315,52 @@ export default function LimitlessImageUploads() {
       </div>
       <div className="max-w-2xl mx-auto mt-4">
         <h2 className="text-3xl font-bold text-gray-900 mb-8">All Images</h2>
-        <div className="grid grid-cols-3 gap-4">
-          {images.map((image) => (
-            <div key={image._id}>
-              <img
-                src={
-                  image.image && (image.image.startsWith('http') || image.image.startsWith('data:'))
-                    ? image.image
-                    : `data:image/webp;base64,${image.image}`
-                }
-                alt={image.name}
-                className="w-full h-64 object-cover rounded-lg"
-              />
+        {showSlowImages && isFetchingImages && (
+          <div className="mb-4 rounded-md border border-yellow-200 bg-yellow-50 text-yellow-800 px-4 py-3 text-sm">
+            Loading images… This is taking longer than usual.
+          </div>
+        )}
+        {imagesError ? (
+          <div className="mb-4 rounded-md border border-red-200 bg-red-50 text-red-800 px-4 py-3 text-sm">
+            <div className="flex items-center justify-between">
+              <span>{imagesError}</span>
+              <button
+                onClick={refetchImages}
+                className="ml-4 inline-flex items-center justify-center rounded-md bg-red-600 px-3 py-1.5 text-white text-xs font-semibold hover:bg-red-700 transition"
+              >
+                Retry
+              </button>
             </div>
-          ))}
-        </div>
+          </div>
+        ) : isFetchingImages ? (
+          <div className="flex flex-col items-center justify-center py-16">
+            <svg className="animate-spin h-12 w-12 text-blue-600 mb-4" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+              <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+              <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v4l3-3-3-3v4A8 8 0 014 12z"></path>
+            </svg>
+            <span className="text-blue-600 font-medium text-lg">Fetching your images...</span>
+          </div>
+        ) : images.length === 0 ? (
+          <div className="rounded-md border border-gray-200 bg-white text-gray-700 px-4 py-6 text-sm">
+            No images yet. Upload one to get started.
+          </div>
+        ) : (
+          <div className="grid grid-cols-3 gap-4">
+            {images.map((image) => (
+              <div key={image._id}>
+                <img
+                  src={
+                    image.image && (image.image.startsWith('http') || image.image.startsWith('data:'))
+                      ? image.image
+                      : `data:image/webp;base64,${image.image}`
+                  }
+                  alt={image.name}
+                  className="w-full h-64 object-cover rounded-lg"
+                />
+              </div>
+            ))}
+          </div>
+        )}
       </div>
     </div>
   );
