@@ -28,3 +28,12 @@ export const uploadGame = async (formData) => {
     });
     return response.json();
   }
+
+  // delete image
+  export const deleteLimitlessImage = async (imageKitId) => {
+    const response = await fetch(`${BASEURL}/deleteLimitlessImage`, {
+      method: 'POST',
+      body: JSON.stringify({ imageKitId: imageKitId }),
+    });
+    return response.json();
+  }

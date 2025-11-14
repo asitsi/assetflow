@@ -1,7 +1,7 @@
 'use client'
 import { useState, useTransition, useEffect } from 'react';
 import { Upload, X } from 'lucide-react';
-import { getLimitlessImages, limitlessImageUpload } from '../libs/index';
+import { getLimitlessImages, limitlessImageUpload, deleteLimitlessImage } from '../libs/index';
 
 export default function LimitlessImageUploads() {
   const [formData, setFormData] = useState({
@@ -19,6 +19,9 @@ export default function LimitlessImageUploads() {
   const [isFetchingImages, startImagesTransition] = useTransition();
   const [imagesError, setImagesError] = useState(null);
   const [showSlowImages, setShowSlowImages] = useState(false);
+  const [isDeleting, startDeleteTransition] = useTransition();
+  const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
+  const [pendingDeleteId, setPendingDeleteId] = useState(null);
 
   const convertImageFileToWebp = (file, quality = 0.8) => {
     return new Promise((resolve, reject) => {
@@ -180,13 +183,14 @@ export default function LimitlessImageUploads() {
 
         const response = await limitlessImageUpload(imageData);
         console.log("response", response);
-        if (response.message === "Image saved to mongodb successfully") {
+        if (response.message === "Image uploaded and saved successfully") {
           setSubmitStatus({ type: 'success', message: 'Image uploaded successfully!' });
           setFormData({ image: null });
           setImagePreview(null);
           setErrors({});
           // Keep webpUrl/webpBlob so user can still download after upload
           setImagesVersion(prev => prev + 1);
+          refetchImages();
         } else {
           setSubmitStatus({ type: 'error', message: response.message || 'Upload failed.' });
         }
@@ -194,12 +198,43 @@ export default function LimitlessImageUploads() {
     }
   };
 
+  const handleImageDeleteClick = (imageKitId) => {
+    if(imageKitId === undefined || imageKitId === null || imageKitId === '') {
+      setImagesError('Image Kit ID is required.');
+      return;
+    }
+    startDeleteTransition(async () => {
+      try {
+        const response = await deleteLimitlessImage(imageKitId);
+        console.log("response", response);
+        if (response?.message === "Image deleted successfully") {
+          refetchImages();
+        } else {
+          setImagesError(response?.message || 'Failed to delete image.');
+        }
+      } catch (_) {
+        setImagesError('Failed to delete image.');
+      } 
+    });
+  };
+
+  const showDeletePopup = (imageKitId) => {
+    setPendingDeleteId(imageKitId);
+    setDeleteDialogOpen(true);
+  };
+
+  const closeDeletePopup = () => {
+    setDeleteDialogOpen(false);
+    setPendingDeleteId(null);
+  };
+
   const refetchImages = () => {
     setImagesError(null);
     startImagesTransition(() => {
       getLimitlessImages()
         .then((response) => {
-          setImages(response?.images || []);
+          console.log("response", response);
+          setImages(response?.games || []);
         })
         .catch(() => {
           setImagesError('Failed to load images.');
@@ -209,18 +244,7 @@ export default function LimitlessImageUploads() {
 
   useEffect(() => {
     refetchImages();
-  }, [imagesVersion]);
-
-  useEffect(() => {
-    if (!isFetchingImages) {
-      setShowSlowImages(false);
-      return;
-    }
-    const t = setTimeout(() => {
-      if (isFetchingImages) setShowSlowImages(true);
-    }, 600);
-    return () => clearTimeout(t);
-  }, [isFetchingImages]);
+  }, []);
 
   return (
     <div className="min-h-screen bg-gray-50 py-8 px-4">
@@ -345,25 +369,61 @@ export default function LimitlessImageUploads() {
             No images yet. Upload one to get started.
           </div>
         ) : (
-          <div className="grid grid-cols-3 gap-4">
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
             {images.map((image) => (
               <div key={image._id}>
                 <img
                   src={
-                    image.image && (image.image.startsWith('http') || image.image.startsWith('data:'))
-                      ? image.image
+                    image.imageUrl && (image.imageUrl.startsWith('http') || image.imageUrl.includes('data:'))
+                      ? image.imageUrl
                       : `data:image/webp;base64,${image.image}`
                   }
                   alt={image.name}
-                  className="w-full h-64 object-cover rounded-lg"
+                  className="w-full h-64 object-cover rounded-lg cursor-pointer"
+                  title={image.title}
+                  onClick={() => showDeletePopup(image.imageKitId)}
                 />
               </div>
             ))}
           </div>
         )}
       </div>
+      {deleteDialogOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center">
+          <div className="absolute inset-0 bg-black/40" onClick={closeDeletePopup} />
+          <div className="relative z-10 w-full max-w-sm rounded-lg bg-white shadow-lg">
+            <div className="px-5 py-4">
+              <h3 className="text-lg font-semibold text-gray-900 mb-2">Confirm delete</h3>
+              <p className="text-sm text-gray-600">Are you sure you want to delete this image?</p>
+            </div>
+            <div className="px-5 pb-4 flex items-center justify-end gap-3">
+              <button
+                type="button"
+                className="inline-flex items-center justify-center rounded-md border border-gray-300 bg-white px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50 transition"
+                onClick={closeDeletePopup}
+                disabled={isDeleting}
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                className={`inline-flex items-center justify-center rounded-md px-4 py-2 text-sm font-semibold text-white transition ${
+                  isDeleting ? 'bg-red-400 cursor-not-allowed' : 'bg-red-600 hover:bg-red-700'
+                }`}
+                onClick={() => {
+                  if (!pendingDeleteId) return;
+                  handleImageDeleteClick(pendingDeleteId);
+                  setDeleteDialogOpen(false);
+                  setPendingDeleteId(null);
+                }}
+                disabled={isDeleting}
+              >
+                {isDeleting ? 'Deleting…' : 'Delete'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
-
-
